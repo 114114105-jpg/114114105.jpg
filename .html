@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAIPEI METRO OCC - INTEGRATED CONTROL SYSTEM v4.2</title>
+    <style>
+        :root {
+            --bg-dark: #040810;
+            --panel-bg: rgba(10, 18, 32, 0.85);
+            --border-line: #182e4d;
+            --border-glow: #00d2ff;
+            --text-primary: #e0f0ff;
+            --text-dim: #4b6a94;
+            
+            /* 捷運路線識別色 */
+            --br-line: #c48c31; /* 文湖線 */
+            --r-line: #e60012;  /* 淡水信義線 */
+            --g-line: #008659;  /* 松山新店線 */
+            --o-line: #f8931d;  /* 中和新蘆線 */
+            --bl-line: #0070bd; /* 板南線 */
+            --y-line: #fdc210;  /* 環狀線 */
+
+            /* 狀態色彩 */
+            --status-ok: #00ff88;
+            --status-warn: #ffb700;
+            --status-alert: #ff2a5f;
+            --cyan-glow: #00f0ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Consolas', 'Monaco', 'Segoe UI', monospace;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(0, 80, 160, 0.08) 0%, transparent 80%),
+                linear-gradient(rgba(0, 240, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 20px 20px, 20px 20px;
+        }
+
+        /* 頂部系統標頭 */
+        header {
+            height: 42px;
+            background: rgba(6, 12, 22, 0.95);
+            border-bottom: 1px solid var(--border-line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.8);
+            z-index: 100;
+        }
+
+        .sys-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            color: #fff;
+        }
+
+        .sys-badge {
+            width: 12px;
+            height: 12px;
+            background: var(--cyan-glow);
+            box-shadow: 0 0 10px var(--cyan-glow);
+            clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 11px;
+        }
+
+        .stat-box {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 3px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+        }
+
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--status-ok);
+            box-shadow: 0 0 8px var(--status-ok);
+            animation: pulse 1.2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.2; }
+            100% { opacity: 1; }
+        }
+
+        /* 主網格佈局 */
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 320px 1fr 340px;
+            grid-template-rows: 1fr 200px;
+            gap: 8px;
+            padding: 8px;
+            height: calc(100vh - 42px);
+        }
+
+        /* 面板基本風格 */
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-line);
+            border-radius: 2px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(4px);
+        }
+
+        .panel::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--cyan-glow), transparent);
+            opacity: 0.3;
+        }
+
+        .panel-head {
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border-line);
+            font-size: 11px;
+            font-weight: bold;
+            color: var(--cyan-glow);
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-body {
+            flex: 1;
+            padding: 8px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .panel-body::-webkit-scrollbar { width: 3px; }
+        .panel-body::-webkit-scrollbar-thumb { background: var(--border-line); }
+
+        /* 左側：路線與警報 */
+        .line-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .line-row {
+            display: grid;
+            grid-template-columns: 6px 1fr auto auto;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 6px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.02);
+            font-size: 11px;
+        }
+
+        .line-tag { height: 100%; border-radius: 1px; }
+
+        .alert-card {
+            padding: 6px 8px;
+            margin-bottom: 6px;
+            background: rgba(255, 42, 95, 0.08);
+            border-left: 3px solid var(--status-alert);
+            font-size: 10px;
+        }
+
+        /* 中央大畫面：拓撲地圖 */
+        .topology-view {
+            grid-column: 2;
+            grid-row: 1;
+            background: #02050b;
+            position: relative;
+        }
+
+        #topoCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .scanlines {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* 右側：CCTV與負載指標 */
+        .cctv-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .cctv-frame {
+            aspect-ratio: 16/9;
+            background: #000;
+            border: 1px solid var(--border-line);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cctv-info {
+            position: absolute;
+            top: 2px; left: 4px;
+            font-size: 8px;
+            color: var(--cyan-glow);
+            background: rgba(0,0,0,0.6);
+            padding: 1px 3px;
+        }
+
+        .cctv-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .metric-group {
+            background: rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.03);
+            padding: 8px;
+            border-radius: 2px;
+            margin-bottom: 6px;
+        }
+
+        .metric-label { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
+        .metric-num { font-size: 18px; font-weight: bold; color: var(--cyan-glow); }
+
+        .progress-outer {
+            height: 4px;
+            background: rgba(255,255,255,0.05);
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .progress-inner {
+            height: 100%;
+            background: var(--cyan-glow);
+            width: 50%;
+            transition: width 0.3s;
+        }
+
+        /* 下方板塊 */
+        .grid-bl { grid-column: 1; grid-row: 2; }
+        .grid-bc { grid-column: 2; grid-row: 2; }
+        .grid-br { grid-column: 3; grid-row: 2; }
+
+        /* 數據表格 */
+        .telemetry-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+            text-align: left;
+        }
+
+        .telemetry-table th {
+            color: var(--text-dim);
+            padding: 4px;
+            border-bottom: 1px solid var(--border-line);
+            background: rgba(0,0,0,0.3);
+        }
+
+        .telemetry-table td {
+            padding: 3px 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+        }
+
+        /* LOG 顯示區 */
+        .log-box {
+            font-size: 9px;
+            color: var(--text-dim);
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .log-row { display: flex; gap: 6px; }
+        .log-time { color: var(--cyan-glow); }
+        .log-txt { color: var(--text-primary); }
+
+        canvas.wave-canvas {
+            width: 100%;
+            height: 100px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 頂部資訊列 -->
+    <header>
+        <div class="sys-title">
+            <div class="sys-badge"></div>
+            <span>TAIPEI METRO OCC // CENTRAL CBTC SYSTEM</span>
+        </div>
+        <div class="header-stats">
+            <div class="stat-box">
+                <div class="pulse-dot"></div>
+                <span>SYSTEM: ONLINE</span>
+            </div>
+            <div class="stat-box">
+                <span>NET LOAD:</span>
+                <span id="valNetLoad" style="color:var(--cyan-glow);">44.2%</span>
+            </div>
+            <div class="stat-box">
+                <span>ONLINE TRAINS:</span>
+                <span id="valTrainCount" style="color:var(--status-ok);">162</span>
+            </div>
+            <div class="stat-box">
+                <span>TIME:</span>
+                <span id="sysClock" style="color:var(--cyan-glow); font-weight:bold;">00:00:00.0</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主儀表板 -->
+    <main>
+        
+        <!-- 左上：全線狀態與警報 -->
+        <div class="panel">
+            <div class="panel-head">
+                <span>LINE STATUS MONITOR</span>
+                <span style="font-size: 9px; color: var(--text-dim);">AUTO-UPDATE</span>
+            </div>
+            <div class="panel-body">
+                <div class="line-list">
+                    <div class="line-row">
+                        <div class="line-tag" style="background:var(--br-line);"></div>
+                        <div><b>BR</b> 文湖線</div>
+                        <div style="color:var(--text-dim);">42 km/h</div>
+                        <div style="color:var(--status-ok);">100%</div>
+                    </div>
+                    <div class="line-row">
+                        <div class="line-tag" style="background:var(--r-line);"></div>
+                        <div><b>R</b> 淡水信義線</div>
+                        <div style="color:var(--text-dim);">65 km/h</div>
+                        <div style="color:var(--status-ok);">99%</div>
+                    </div>
+                    <div class="line-row">
+                        <div class="line-tag" style="background:var(--g-line);"></div>
+                        <div><b>G</b> 松山新店線</div>
+                        <div style="color:var(--text-dim);">58 km/h</div>
+                        <div style="color:var(--status-ok);">98%</div>
+                    </div>
+                    <div class="line-row">
+                        <div class="line-tag" style="background:var(--o-line);"></div>
+                        <div><b>O</b> 中和新蘆線</div>
+                        <div style="color:var(--text-dim);">54 km/h</div>
+                        <div style="color:var(--status-warn);">92%</div>
+                    </div>
+                    <div class="line-row">
+                        <div class="line-tag" style="background:var(--bl-line);"></div>
+                        <div><b>BL</b> 板南線</div>
+                        <div style="color:var(--text-dim);">68 km/h</div>
+                        <div style="color:var(--status-ok);">97%</div>
+                    </div>
+                    <div class="line-row">
+                        <div class="line-tag" style="background:var(--y-line);"></div>
+                        <div><b>Y</b> 環狀線</div>
+                        <div style="color:var(--text-dim);">38 km/h</div>
+                        <div style="color:var(--status-ok);">100%</div>
+                    </div>
+                </div>
+
+                <div class="panel-head" style="margin: 10px -8px 6px -8px;">
+                    <span>SYSTEM ALERTS</span>
+                </div>
+                <div id="alertContainer"></div>
+            </div>
+        </div>
+
+        <!-- 中央：主拓撲畫布 -->
+        <div class="panel topology-view">
+            <div class="panel-head" style="position: absolute; top:0; left:0; right:0; z-index:20; background:rgba(2,5,11,0.85);">
+                <span>REAL-TIME NETWORK TOPOLOGY MAP (CBTC TRACKING)</span>
+                <span style="font-size: 9px; color: var(--cyan-glow);">LIVE VECTOR</span>
+            </div>
+            <canvas id="topoCanvas"></canvas>
+            <div class="scanlines"></div>
+        </div>
+
+        <!-- 右上：CCTV 與動態指數 -->
+        <div class="panel">
+            <div class="panel-head">STATION SURVEILLANCE & POWER</div>
+            <div class="panel-body">
+                <div class="cctv-grid">
+                    <div class="cctv-frame">
+                        <div class="cctv-info">CAM-01 [R10 台北車站]</div>
+                        <canvas id="cctv1" class="cctv-canvas"></canvas>
+                    </div>
+                    <div class="cctv-frame">
+                        <div class="cctv-info">CAM-02 [BL12 忠孝復興]</div>
+                        <canvas id="cctv2" class="cctv-canvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="metric-group">
+                    <div class="metric-label">SUBSTATION 750V DC BUS VOLTAGE</div>
+                    <div class="metric-num" id="valVoltage">748.5 V</div>
+                    <div class="progress-outer">
+                        <div class="progress-inner" id="barVoltage" style="width: 80%;"></div>
+                    </div>
+                </div>
+
+                <div class="metric-group">
+                    <div class="metric-label">TOTAL PASSENGER FLOW (PAX/MIN)</div>
+                    <div class="metric-num" id="valPax" style="color:var(--status-ok);">14,820</div>
+                    <div class="progress-outer">
+                        <div class="progress-inner" id="barPax" style="width: 65%; background:var(--status-ok);"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 左下：遙測列車狀態 -->
+        <div class="panel grid-bl">
+            <div class="panel-head">TRAIN TELEMETRY MATRIX</div>
+            <div class="panel-body" style="padding: 0;">
+                <table class="telemetry-table">
+                    <thead>
+                        <tr>
+                            <th>TRAIN ID</th>
+                            <th>LINE</th>
+                            <th>SPEED</th>
+                            <th>MODE</th>
+                            <th>STATUS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="telemetryBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 中下：電力負載波形圖 -->
+        <div class="panel grid-bc">
+            <div class="panel-head">
+                <span>SUBSTATION POWER WAVEFORM (60Hz)</span>
+                <span style="font-size:9px; color:var(--status-ok);">REALTIME</span>
+            </div>
+            <div class="panel-body">
+                <canvas id="waveCanvas" class="wave-canvas"></canvas>
+            </div>
+        </div>
+
+        <!-- 右下：系統 Log -->
+        <div class="panel grid-br">
+            <div class="panel-head">SYSTEM EVENT LOGS</div>
+            <div class="panel-body">
+                <div class="log-box" id="logBox"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // 1. 時鐘邏輯
+        function updateClock() {
+            const now = new Date();
+            const ms = Math.floor(now.getMilliseconds() / 100);
+            const timeStr = now.toTimeString().split(' ')[0] + '.' + ms;
+            document.getElementById('sysClock').innerText = timeStr;
+        }
+        setInterval(updateClock, 100);
+
+        // 2. 隨機數值變化
+        setInterval(() => {
+            document.getElementById('valNetLoad').innerText = (40 + Math.random() * 8).toFixed(1) + '%';
+            const v = (742 + Math.random() * 10).toFixed(1);
+            document.getElementById('valVoltage').innerText = v + ' V';
+            document.getElementById('barVoltage').style.width = ((v - 700) / 100 * 100) + '%';
+            
+            const pax = Math.floor(14000 + Math.random() * 1200);
+            document.getElementById('valPax').innerText = pax.toLocaleString();
+            document.getElementById('barPax').style.width = (pax / 20000 * 100) + '%';
+        }, 1200);
+
+        // 3. 拓撲地圖 Canvas 繪製 (捷運路線 & 列車動態)
+        const topoCanvas = document.getElementById('topoCanvas');
+        const tctx = topoCanvas.getContext('2d');
+
+        function resizeTopo() {
+            topoCanvas.width = topoCanvas.parentElement.clientWidth;
+            topoCanvas.height = topoCanvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeTopo);
+        resizeTopo();
+
+        const metroLines = [
+            {
+                name: "淡水信義線", color: "#e60012",
+                nodes: [{x:0.15, y:0.15}, {x:0.35, y:0.15}, {x:0.5, y:0.45}, {x:0.5, y:0.75}, {x:0.65, y:0.85}]
+            },
+            {
+                name: "板南線", color: "#0070bd",
+                nodes: [{x:0.1, y:0.6}, {x:0.5, y:0.6}, {x:0.88, y:0.35}]
+            },
+            {
+                name: "松山新店線", color: "#008659",
+                nodes: [{x:0.25, y:0.85}, {x:0.4, y:0.45}, {x:0.7, y:0.45}, {x:0.85, y:0.2}]
+            },
+            {
+                name: "中和新蘆線", color: "#f8931d",
+                nodes: [{x:0.2, y:0.3}, {x:0.45, y:0.55}, {x:0.55, y:0.85}]
+            }
+        ];
+
+        // 創建動態列車
+        const trains = [];
+        metroLines.forEach((line, lineIdx) => {
+            for (let i = 0; i < 4; i++) {
+                trains.push({
+                    id: `TR-${200 + lineIdx * 20 + i}`,
+                    lineIdx: lineIdx,
+                    pos: Math.random(),
+                    speed: 0.0006 + Math.random() * 0.0008,
+                    dir: Math.random() > 0.5 ? 1 : -1
+                });
+            }
+        });
+
+        function getInterpolatedPos(nodes, pos) {
+            const segs = nodes.length - 1;
+            const scaled = pos * segs;
+            const idx = Math.floor(scaled);
+            const rem = scaled - idx;
+            if (idx >= segs) return nodes[nodes.length - 1];
+            
+            const n1 = nodes[idx];
+            const n2 = nodes[idx + 1];
+            return {
+                x: n1.x + (n2.x - n1.x) * rem,
+                y: n1.y + (n2.y - n1.y) * rem
+            };
+        }
+
+        function animateTopo() {
+            const w = topoCanvas.width;
+            const h = topoCanvas.height;
+            tctx.clearRect(0, 0, w, h);
+
+            // 畫背影網格
+            tctx.strokeStyle = "rgba(24, 46, 77, 0.4)";
+            tctx.lineWidth = 1;
+            const grid = 30;
+            for(let x=0; x<w; x+=grid) { tctx.beginPath(); tctx.moveTo(x,0); tctx.lineTo(x,h); tctx.stroke(); }
+            for(let y=0; y<h; y+=grid) { tctx.beginPath(); tctx.moveTo(0,y); tctx.lineTo(w,y); tctx.stroke(); }
+
+            // 畫軌道
+            metroLines.forEach(line => {
+                tctx.beginPath();
+                tctx.strokeStyle = line.color;
+                tctx.lineWidth = 5;
+                tctx.lineCap = "round";
+                tctx.lineJoin = "round";
+                line.nodes.forEach((n, idx) => {
+                    if (idx === 0) tctx.moveTo(n.x * w, n.y * h);
+                    else tctx.lineTo(n.x * w, n.y * h);
+                });
+                tctx.stroke();
+
+                // 車站站點
+                line.nodes.forEach(n => {
+                    tctx.beginPath();
+                    tctx.arc(n.x * w, n.y * h, 4, 0, Math.PI * 2);
+                    tctx.fillStyle = "#040810";
+                    tctx.fill();
+                    tctx.strokeStyle = "#ffffff";
+                    tctx.lineWidth = 1.5;
+                    tctx.stroke();
+                });
+            });
+
+            // 畫動態列車
+            trains.forEach(t => {
+                t.pos += t.speed * t.dir;
+                if (t.pos >= 1 || t.pos <= 0) t.dir *= -1;
+
+                const line = metroLines[t.lineIdx];
+                const coords = getInterpolatedPos(line.nodes, t.pos);
+                const cx = coords.x * w;
+                const cy = coords.y * h;
+
+                // 發光效果
+                tctx.beginPath();
+                tctx.arc(cx, cy, 7, 0, Math.PI * 2);
+                tctx.fillStyle = line.color;
+                tctx.shadowColor = line.color;
+                tctx.shadowBlur = 8;
+                tctx.fill();
+                tctx.shadowBlur = 0;
+
+                // 列車中心點
+                tctx.beginPath();
+                tctx.arc(cx, cy, 3, 0, Math.PI * 2);
+                tctx.fillStyle = "#fff";
+                tctx.fill();
+
+                // 列車編號
+                tctx.fillStyle = "rgba(224, 240, 255, 0.7)";
+                tctx.font = "9px Consolas";
+                tctx.fillText(t.id, cx + 9, cy + 3);
+            });
+
+            requestAnimationFrame(animateTopo);
+        }
+        animateTopo();
+
+        // 4. 模擬 CCTV 訊號畫面
+        function initCCTV(id) {
+            const cvs = document.getElementById(id);
+            const ctx = cvs.getContext('2d');
+            cvs.width = cvs.parentElement.clientWidth;
+            cvs.height = cvs.parentElement.clientHeight;
+
+            function drawCCTV() {
+                ctx.fillStyle = "#050a12";
+                ctx.fillRect(0, 0, cvs.width, cvs.height);
+
+                // 模擬雜訊畫面
+                ctx.fillStyle = "rgba(0, 240, 255, 0.05)";
+                for (let i = 0; i < 20; i++) {
+                    ctx.fillRect(Math.random() * cvs.width, Math.random() * cvs.height, Math.random() * 40, 1);
+                }
+
+                // 月台靜態線條代表
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+                ctx.beginPath();
+                ctx.moveTo(0, cvs.height * 0.7);
+                ctx.lineTo(cvs.width, cvs.height * 0.7);
+                ctx.stroke();
+
+                setTimeout(() => requestAnimationFrame(drawCCTV), 100);
+            }
+            drawCCTV();
+        }
+        initCCTV('cctv1');
+        initCCTV('cctv2');
+
+        // 5. 遙測表格動態更新
+        const telemetryBody = document.getElementById('telemetryBody');
+        function updateTelemetry() {
+            telemetryBody.innerHTML = '';
+            trains.slice(0, 6).forEach(t => {
+                const tr = document.createElement('tr');
+                const lineName = metroLines[t.lineIdx].name;
+                const spd = (45 + Math.random() * 25).toFixed(0);
+                tr.innerHTML = `
+                    <td style="color:var(--cyan-glow);">${t.id}</td>
+                    <td>${lineName}</td>
+                    <td>${spd} km/h</td>
+                    <td><span style="color:var(--status-ok);">ATO</span></td>
+                    <td><span style="color:var(--status-ok);">NORM</span></td>
+                `;
+                telemetryBody.appendChild(tr);
+            });
+        }
+        setInterval(updateTelemetry, 1800);
+        updateTelemetry();
+
+        // 6. 電流波形圖 (Canvas)
+        const waveCanvas = document.getElementById('waveCanvas');
+        const wctx = waveCanvas.getContext('2d');
+        let waveData = new Array(60).fill(50);
+
+        function resizeWave() {
+            waveCanvas.width = waveCanvas.parentElement.clientWidth;
+            waveCanvas.height = waveCanvas.parentElement.clientHeight - 10;
+        }
+        window.addEventListener('resize', resizeWave);
+        resizeWave();
+
+        function drawWave() {
+            const w = waveCanvas.width;
+            const h = waveCanvas.height;
+            wctx.clearRect(0, 0, w, h);
+
+            waveData.push(30 + Math.random() * 40);
+            waveData.shift();
+
+            wctx.beginPath();
+            wctx.strokeStyle = "#00f0ff";
+            wctx.lineWidth = 1.5;
+
+            const dx = w / (waveData.length - 1);
+            waveData.forEach((v, i) => {
+                const x = i * dx;
+                const y = h - (v / 100) * h;
+                if (i === 0) wctx.moveTo(x, y);
+                else wctx.lineTo(x, y);
+            });
+            wctx.stroke();
+
+            requestAnimationFrame(drawWave);
+        }
+        drawWave();
+
+        // 7. 日誌與警報跳動
+        const logBox = document.getElementById('logBox');
+        const alertContainer = document.getElementById('alertContainer');
+
+        const logPool = [
+            "CBTC Health Check OK - Interlocking Zone 4",
+            "Automatic Train Supervision (ATS) Frame Transmitted",
+            "PSD Door Status Confirmed Closed [R11]",
+            "Traction Substation Transformer Voltage Normal",
+            "Dwell Time Matrix Auto-adjusted"
+        ];
+
+        function pushLog() {
+            const time = new Date().toTimeString().split(' ')[0];
+            const msg = logPool[Math.floor(Math.random() * logPool.length)];
+            const div = document.createElement('div');
+            div.className = 'log-row';
+            div.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-txt">${msg}</span>`;
+            logBox.appendChild(div);
+            if (logBox.children.length > 5) logBox.removeChild(logBox.firstChild);
+        }
+        setInterval(pushLog, 2000);
+
+        function pushAlert() {
+            const time = new Date().toTimeString().split(' ')[0];
+            const div = document.createElement('div');
+            div.className = 'alert-card';
+            div.innerHTML = `
+                <div style="display:flex; justify-content:space-between; font-weight:bold;">
+                    <span style="color:var(--status-alert);">ALERT #308</span>
+                    <span style="color:var(--text-dim);">${time}</span>
+                </div>
+                <div>Track Circuit Minor Noise Delta at Zone G-04</div>
+            `;
+            alertContainer.prepend(div);
+            if (alertContainer.children.length > 2) alertContainer.removeChild(alertContainer.lastChild);
+        }
+        setInterval(pushAlert, 7000);
+        pushAlert();
+    </script>
+</body>
+</html>
